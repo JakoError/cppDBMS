@@ -1,8 +1,14 @@
+//
+// Created by JakoError on 2022/10/20.
+//
 #include <boost/regex.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/throw_exception.hpp>
 #include <boost/exception/diagnostic_information.hpp>
 #include <boost/lexical_cast.hpp>
+
+#include <boost/asio.hpp>
+
 #include <iostream>
 #include <string>
 #include <list>
@@ -20,7 +26,12 @@ using boost::regex;
 using boost::regex_match;
 using boost::algorithm::trim;
 
+using namespace boost::asio;
+
 typedef std::istream_iterator<int> in;
+
+string ip_address = "127.0.0.1";
+boost::asio::ip::port_type port = 8000;
 
 string cmd_line = "> ";
 
@@ -33,7 +44,7 @@ enum cond_op_num {
 };
 
 enum cmd_num {
-    create_db = 0, drop_db, use_db, create_tb, drop_tb, select_v, delete_v, insert_v
+    create_db = 0, drop_db, use_db, create_tb, drop_tb, select_v, delete_v, insert_v, exit_c
 };
 
 std::map<string, cond_op_num> cond_op_map = {{"=", equal},
@@ -106,6 +117,24 @@ int main() {
                     "(" + value_regex + seg_v + "(," + seg_v + value_regex + seg_v + ")*)"
                     + "\\)");
     regex re_exit("exit");
+
+    //connect to server
+    while (true) {
+        try {
+            io_service service;
+            ip::tcp::endpoint ep(ip::address::from_string(ip_address), port);
+            ip::tcp::socket sock(service);
+            sock.connect(ep);
+        } catch (std::exception const &x) {
+            std::cerr << boost::diagnostic_information(x) << std::endl;
+            std::flush(std::cerr);
+            system("pause");
+            continue;
+        }
+        cout<<"connected to server:"<<ip_address<<" port:"<<port<<endl;
+        break;
+    }
+
     while (true) {
         cout << cmd_line;
         string cmd;

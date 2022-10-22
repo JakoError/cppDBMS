@@ -9,4 +9,5 @@ set(BOOST_LINK_DIR  D:/Codes/C++/boost_1_80_0/stage/lib)
 include_directories(${BOOST_INC_DIR})
 link_directories(${BOOST_LINK_DIR})
 
-add_executable(cppDBMS main.cpp)
+add_executable(cppDBMS_client client.cpp)
+add_executable(cppDBMS_server server.cpp)
