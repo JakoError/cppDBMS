@@ -6,6 +6,7 @@
 #include <boost/asio.hpp>
 #include <boost/thread.hpp>
 #include <boost/intrusive/bstree.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <string>
 #include <utility>
@@ -16,6 +17,8 @@
 #include <fstream>
 
 #define MAX_CMD_SIZE 1024
+
+#define STR_LENGTH 256
 
 using namespace boost::asio;
 using boost::regex;
@@ -50,11 +53,11 @@ public:
     static regex re_insert;
     static regex re_exit;
 private:
-    enum cmd_num {
+    enum cmd_num : int {
         create_db = 0, drop_db, use_db, create_tb, drop_tb, select_v, delete_v, insert_v, exit_c
     };
 
-    enum type_num {
+    enum type_num : int {
         int_type = 0, str_type = 1
     };
 
@@ -137,7 +140,7 @@ private:
         data.open(db_path / current_database / tb_name / (tb_name + ".dat"));
         //table .idx create
         if (primary_index != -1) {
-            data.open(db_path / current_database / tb_name / (tb_name + ".data"));
+            data.open(db_path / current_database / tb_name / (tb_name + ".idx"));
             data << primary_index;
         }
         return SUCC_MSG + "Table " + tb_name + " created!";
@@ -149,11 +152,293 @@ private:
         if (!is_tb_exists(tb_name))
             return FAIL_MSG + "Table " + tb_name + " not exists in Database " + current_database + "!";
         remove_all(db_path / current_database / tb_name);
+        //check tb directory delete
+        if (is_tb_exists(tb_name))
+            BOOST_THROW_EXCEPTION(std::runtime_error("server drop table io failed!"));
         return SUCC_MSG + "Database " + tb_name + " dropped.";
     }
 
-    string select_value(string &column, string &tb_name){
+    static void read_value(std::istream &is, int &value) {
+        is >> value;
+    }
 
+    static void read_value(std::istream &is, string &value) {
+        char buff[STR_LENGTH];
+        is.read(buff, STR_LENGTH);
+        string take(buff, STR_LENGTH);
+        trim(take);
+        value = take;
+    }
+
+    string select_value(const string &column, const string &tb_name) {
+        if (current_database.empty())
+            return FAIL_MSG + " use Database first!";
+        if (!is_tb_exists(tb_name))
+            return FAIL_MSG + "Table " + tb_name + " not exists in Database " + current_database + "!";
+        std::fstream data;
+        data.open(db_path / current_database / tb_name / (tb_name + ".tb"));
+        size_t size = 0;
+        if (data.eof())
+            BOOST_THROW_EXCEPTION(std::runtime_error("broken table file!"));
+        data >> size;
+        if (size <= 0)
+            BOOST_THROW_EXCEPTION(std::runtime_error("broken table file!"));
+        vector<string> column_names;
+        vector<int> column_types;
+        for (size_t i = 0; i < size; ++i) {
+            data >> column_types[i];
+        }
+        for (size_t i = 0; i < size; ++i) {
+            typename string::size_type length;
+            data >> length;
+            boost::shared_ptr<char> buffer(new char[length]);
+            data.read(buffer.get(), static_cast<std::streamsize>(length));
+            column_names[i] = string(buffer.get(), length);
+        }
+        std::stringstream ss;
+        ss << "Table:" << tb_name << endl;
+        for (size_t i = 0; i < size; ++i) {
+            ss << column_names[i] << "\t";
+        }
+        ss << "\n";
+        data.open(db_path / current_database / tb_name / (tb_name + ".dat"));
+        while (!data.eof()) {
+            for (size_t i = 0; i < size; ++i) {
+                if (column_types[i] == int_type) {
+                    int value;
+                    read_value(data, value);
+                    ss << value << "\t";
+                } else {
+                    string value;
+                    read_value(data, value);
+                    ss << "\"" << value << "\"\t";
+                }
+            }
+            ss << endl;
+        }
+        return ss.str();
+    }
+
+    template<typename value_type>
+    string select_value(const string &col_name, const string &tb_name, const string &cond_col_name,
+                        boost::function<bool(value_type)> cond) {
+        if (current_database.empty())
+            return FAIL_MSG + " use Database first!";
+        if (!is_tb_exists(tb_name))
+            return FAIL_MSG + "Table " + tb_name + " not exists in Database " + current_database + "!";
+        std::fstream data;
+        data.open(db_path / current_database / tb_name / (tb_name + ".tb"));
+        size_t size = 0;
+        if (data.eof())
+            BOOST_THROW_EXCEPTION(std::runtime_error("broken table file!"));
+        data >> size;
+        if (size <= 0)
+            BOOST_THROW_EXCEPTION(std::runtime_error("broken table file!"));
+        //define basic info about table
+        vector<string> column_names(size);
+        vector<int> column_types(size);
+        size_t line_size = 0;
+        vector<size_t> column_offset(size);
+
+        //anchor of column
+        int select_col_idx = -1;
+        int cond_col_idx = -1;
+
+        //read column type
+        for (int i = 0; i < size; ++i) {
+            data >> column_types[i];
+            column_offset[i] = line_size;
+            if (column_types[i] == int_type)
+                line_size += sizeof(int);
+            else
+                line_size += sizeof(char) * STR_LENGTH;
+        }
+        //read column name & set anchor
+        for (int i = 0; i < size; ++i) {
+            typename string::size_type length;
+            data >> length;
+            boost::shared_ptr<char> buffer(new char[length]);
+            data.read(buffer.get(), static_cast<std::streamsize>(length));
+            column_names[i] = string(buffer.get(), length);
+            if (cond_col_idx == -1 && cond_col_name == column_names[i])
+                cond_col_idx = i;
+            if (select_col_idx == -1 && col_name == column_names[i])
+                select_col_idx = i;
+        }
+        if (col_name != "*" && select_col_idx == -1)
+            return FAIL_MSG + "Column " + col_name + " not exists in Table " + tb_name;
+        if (!cond_col_name.empty() && cond_col_idx == -1)
+            return FAIL_MSG + "Column " + cond_col_name + " not exists in Table " + tb_name;
+
+        //generate head output
+        std::stringstream ss;
+        ss << "Table:" << tb_name << endl;
+        if (select_col_idx != -1)
+            ss << column_names[select_col_idx];
+        else
+            for (int i = 0; i < size; ++i) {
+                ss << column_names[i] << "\t";
+            }
+        ss << endl;
+        //generate data output
+        data.open(db_path / current_database / tb_name / (tb_name + ".dat"));
+        for (int line_idx = 0; !data.eof(); ++line_idx) {
+            //cond
+            if (cond_col_idx != -1) {
+                data.seekg(static_cast<std::istream::off_type>(column_offset[cond_col_idx]),
+                           static_cast<std::ios_base::seekdir>(line_idx * line_size));
+                value_type value;
+                read_value(data, value);
+                if (!cond(value,)) continue;
+            }
+            if (select_col_idx != -1) {
+                data.seekg(static_cast<std::istream::off_type>(column_offset[select_col_idx]),
+                           static_cast<std::ios_base::seekdir>(line_idx * line_size));
+                if (column_types[select_col_idx] == int_type) {
+                    int value;
+                    data >> value;
+                    ss << value;
+                } else {
+                    char buff[STR_LENGTH];
+                    data.read(buff, STR_LENGTH);
+                    string value(buff, STR_LENGTH);
+                    trim(value);
+                    ss << value;
+                }
+            } else {
+                for (size_t i = 0; i < size; ++i) {
+                    if (column_types[i] == int_type) {
+                        int value;
+                        data >> value;
+                        ss << value << "\t";
+                    } else {
+                        char buff[STR_LENGTH];
+                        data.read(buff, STR_LENGTH);
+                        string value(buff, STR_LENGTH);
+                        trim(value);
+                        ss << "\"" << value << "\"\t";
+                    }
+                }
+            }
+            ss << endl;
+        }
+        return ss.str();
+    }
+
+    template<typename value_type>
+    string delete_value(const string &tb_name) {
+        if (current_database.empty())
+            return FAIL_MSG + " use Database first!";
+        if (!is_tb_exists(tb_name))
+            return FAIL_MSG + "Table " + tb_name + " not exists in Database " + current_database + "!";
+        std::fstream data;
+        data.open(db_path / current_database / tb_name / (tb_name + ".dat"));
+        return SUCC_MSG + "delete all the value in Table "+tb_name;
+    }
+
+    template<typename value_type>
+    string delete_value(const string &tb_name, const string &cond_col_name, boost::function<bool(value_type)> cond) {
+        if (current_database.empty())
+            return FAIL_MSG + " use Database first!";
+        if (!is_tb_exists(tb_name))
+            return FAIL_MSG + "Table " + tb_name + " not exists in Database " + current_database + "!";
+        std::fstream data;
+        data.open(db_path / current_database / tb_name / (tb_name + ".tb"));
+        size_t size = 0;
+        if (data.eof())
+            BOOST_THROW_EXCEPTION(std::runtime_error("broken table file!"));
+        data >> size;
+        if (size <= 0)
+            BOOST_THROW_EXCEPTION(std::runtime_error("broken table file!"));
+        //define basic info about table
+        vector<string> column_names(size);
+        vector<int> column_types(size);
+        size_t line_size = 0;
+        vector<size_t> column_offset(size);
+
+        //anchor of column
+        int select_col_idx = -1;
+        int cond_col_idx = -1;
+
+        //read column type
+        for (int i = 0; i < size; ++i) {
+            data >> column_types[i];
+            column_offset[i] = line_size;
+            if (column_types[i] == int_type)
+                line_size += sizeof(int);
+            else
+                line_size += sizeof(char) * STR_LENGTH;
+        }
+        //read column name & set anchor
+        for (int i = 0; i < size; ++i) {
+            typename string::size_type length;
+            data >> length;
+            boost::shared_ptr<char> buffer(new char[length]);
+            data.read(buffer.get(), static_cast<std::streamsize>(length));
+            column_names[i] = string(buffer.get(), length);
+            if (cond_col_idx == -1 && cond_col_name == column_names[i])
+                cond_col_idx = i;
+            if (select_col_idx == -1 && col_name == column_names[i])
+                select_col_idx = i;
+        }
+        if (col_name != "*" && select_col_idx == -1)
+            return FAIL_MSG + "Column " + col_name + " not exists in Table " + tb_name;
+        if (!cond_col_name.empty() && cond_col_idx == -1)
+            return FAIL_MSG + "Column " + cond_col_name + " not exists in Table " + tb_name;
+
+        //generate head output
+        std::stringstream ss;
+        ss << "Table:" << tb_name << endl;
+        if (select_col_idx != -1)
+            ss << column_names[select_col_idx];
+        else
+            for (int i = 0; i < size; ++i) {
+                ss << column_names[i] << "\t";
+            }
+        ss << endl;
+        //generate data output
+        data.open(db_path / current_database / tb_name / (tb_name + ".dat"));
+        for (int line_idx = 0; !data.eof(); ++line_idx) {
+            //cond
+            if (cond_col_idx != -1) {
+                data.seekg(static_cast<std::istream::off_type>(column_offset[cond_col_idx]),
+                           static_cast<std::ios_base::seekdir>(line_idx * line_size));
+                value_type value;
+                read_value(data, value);
+                if (!cond(value,)) continue;
+            }
+            if (select_col_idx != -1) {
+                data.seekg(static_cast<std::istream::off_type>(column_offset[select_col_idx]),
+                           static_cast<std::ios_base::seekdir>(line_idx * line_size));
+                if (column_types[select_col_idx] == int_type) {
+                    int value;
+                    data >> value;
+                    ss << value;
+                } else {
+                    char buff[STR_LENGTH];
+                    data.read(buff, STR_LENGTH);
+                    string value(buff, STR_LENGTH);
+                    trim(value);
+                    ss << value;
+                }
+            } else {
+                for (size_t i = 0; i < size; ++i) {
+                    if (column_types[i] == int_type) {
+                        int value;
+                        data >> value;
+                        ss << value << "\t";
+                    } else {
+                        char buff[STR_LENGTH];
+                        data.read(buff, STR_LENGTH);
+                        string value(buff, STR_LENGTH);
+                        trim(value);
+                        ss << "\"" << value << "\"\t";
+                    }
+                }
+            }
+            ss << endl;
+        }
+        return ss.str();
     }
 
     string process_create_db(const string &cmd) {
@@ -223,12 +508,26 @@ private:
         trim(value_str);
         auto head_strs = split_by_space(head_str);
         if (head_strs.size() == 4) {
-            select_value(head_strs[1], head_strs[3]);
+            return select_value(head_strs[1], head_strs[3]);
         } else if (head_strs.size() == 7) {
-            select_value(head_strs[1], head_strs[3], head_strs[5], cond_op_map[head_strs[6]], value_str);
+            boost::function<bool(string)> cond;
+            if (head_strs[6] == "<")
+                cond = [value_str](const string &val) { return val < value_str; };
+            else if (head_strs[6] == ">")
+                cond = [value_str](const string &val) { return val > value_str; };
+            else
+                cond = [value_str](const string &val) { return val == value_str; };
+            return select_value<string>(head_strs[1], head_strs[3], head_strs[5], cond);
         } else if (head_strs.size() == 8) {
-            select_value(head_strs[1], head_strs[3], head_strs[5], cond_op_map[head_strs[6]],
-                         boost::lexical_cast<int>(head_strs[7]));
+            int value_int = boost::lexical_cast<int>(head_strs[7]);
+            boost::function<bool(int)> cond;
+            if (head_strs[6] == "<")
+                cond = [value_int](int val) { return val < value_int; };
+            else if (head_strs[6] == ">")
+                cond = [value_int](int val) { return val > value_int; };
+            else
+                cond = [value_int](int val) { return val == value_int; };
+            return select_value<int>(head_strs[1], head_strs[3], head_strs[5], cond);
         } else {
             BOOST_THROW_EXCEPTION(std::runtime_error("syntax match select value error"));
         }
