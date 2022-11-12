@@ -7,41 +7,60 @@
 using namespace boost::filesystem;
 
 void cppDBMS::DataBase::load_data() {
+    tables.clear();
+    name_to_table.clear();
     for (const auto &entry: directory_iterator(get_data_path())) {
-        if (is_directory(entry))
+        if (is_directory(entry)) {
             this->tables.emplace_back(entry.path(), entry.path().filename().string());
+        }
+    }
+    for (auto &tb: tables) {
+        name_to_table[tb.tb_name] = &tb;
     }
 }
 
 bool cppDBMS::DataBase::is_tb_exists(const string &tb_name) {
-    return std::ranges::any_of(tables, [&](const Table &tb) { return tb.tb_name == tb_name; });
+    return name_to_table.count(tb_name) != 0;
 }
 
 cppDBMS::Table *cppDBMS::DataBase::getTable(const string &tb_name) {
-    for (Table &tb: tables) {
-        if (tb.tb_name == tb_name)
-            return &tb;
-    }
-    return nullptr;
+    if (name_to_table.count(tb_name) == 0)
+        return nullptr;
+    return name_to_table[tb_name];
 }
 
 void cppDBMS::DataBase::create() {
-    fstream db_dir;
-    db_dir.open(get_data_path());
-    if (!db_dir.is_open())
-        BOOST_THROW_EXCEPTION(std::runtime_error("create database failed"));
+    create_directory(get_data_path());
+    if (!exists(get_data_path()))
+        BOOST_THROW_EXCEPTION(IOException("create database failed"));
 }
 
 void cppDBMS::DataBase::drop() {
-    remove_all(get_data_path());
+    for (auto &tb: tables) {
+        tb.drop();
+    }
+    remove(get_data_path());
     if (exists(get_data_path()))
-        BOOST_THROW_EXCEPTION(std::runtime_error("remove database file failed"));
+        BOOST_THROW_EXCEPTION(IOException("remove database file failed"));
 }
 
 void cppDBMS::DataBase::create_table(const string &tb_name,
-                                     const vector<string> &column_names, const vector<type_num> &column_types,
-                                     int primary_index) {
+                                     const vector<string> &column_names, const vector<type_num_type> &column_types,
+                                     int primary) {
     load_data();
-    if(is_tb_exists(tb_name))
-        BOOST_THROW_EXCEPTION(std::runtime_error("Table " + tb_name + " already exists in Database " + db_name + "!"))
+    if (is_tb_exists(tb_name))
+        BOOST_THROW_EXCEPTION(SqlException("Table " + tb_name + " already exists in Database " + db_name + "!"));
+    Table &tb = this->tables.emplace_back(get_data_path() / tb_name, tb_name, column_names, column_types, primary);
+    tb.create();
+    tb.save_data();
+    name_to_table[tb_name] = &tb;
+}
+
+void cppDBMS::DataBase::save_data() {
+}
+
+void cppDBMS::DataBase::release_data() {
+    for (auto &tb: tables) {
+        tb.release_data();
+    }
 }

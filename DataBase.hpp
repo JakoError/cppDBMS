@@ -18,6 +18,8 @@ namespace cppDBMS {
         string db_name;
         vector<Table> tables;
 
+        map<string, Table *> name_to_table;
+
         DataBase(const path &dataPath, string dbName) : Data(dataPath), db_name(std::move(dbName)) {}
 
         void load_data() override;
@@ -26,11 +28,15 @@ namespace cppDBMS {
 
         void drop() override;
 
+        void save_data() override;
+
+        void release_data() override;
+
         bool is_tb_exists(const string &tb_name);
 
         void create_table(const string &tb_name,
-                          const vector<string> &column_names, const vector<type_num> &column_types,
-                          int primary_index);
+                          const vector<string> &column_names, const vector<type_num_type> &column_types,
+                          size_type primary);
 
         Table *getTable(const string &tb_name);
     };

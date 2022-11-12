@@ -3,102 +3,191 @@
 //
 #include "DBMS.hpp"
 
+#include <boost/exception/diagnostic_information.hpp>
+
+#include <iostream>
+
+#include "DBMSExceptions.hpp"
+
 using namespace boost::filesystem;
 
-const string cppDBMS::DBMS::FAIL_MSG = "failed: ";
-const string cppDBMS::DBMS::SUCC_MSG = "succeed: ";
+namespace cppDBMS {
 
-bool cppDBMS::DBMS::is_db_exists(const string &db_name) {
-    return std::ranges::any_of(databases, [&](const auto &db) { return db.db_name == db_name; });
-}
 
-void cppDBMS::DBMS::create() {
-    BOOST_THROW_EXCEPTION(std::runtime_error("cannot create DBMS"));
-}
+    const string DBMS::FAIL_MSG = "failed: ";
+    const string DBMS::SUCC_MSG = "succeed: ";
 
-void cppDBMS::DBMS::drop() {
-    BOOST_THROW_EXCEPTION(std::runtime_error("cannot drop DBMS"));
-}
-
-void cppDBMS::DBMS::load_data() {
-    for (const auto &entry: directory_iterator(get_data_path())) {
-        if (is_directory(entry))
-            this->databases.emplace_back(entry.path(), entry.path().filename().string());
+    string DBMS::process_sql(const string &cmd) {
+        try {
+            if (regex_match(cmd, SQLParser::re_create_db)) {
+                return process_create_db(cmd);
+            } else if (regex_match(cmd, SQLParser::re_drop_db)) {
+                return process_drop_db(cmd);
+            } else if (regex_match(cmd, SQLParser::re_use_db)) {
+                return process_use_db(cmd);
+            } else if (regex_match(cmd, SQLParser::re_create_tb)) {
+                return process_create_tb(cmd);
+            } else if (regex_match(cmd, SQLParser::re_drop_tb)) {
+                return process_drop_tb(cmd);
+            } else if (regex_match(cmd, SQLParser::re_select)) {
+                return process_select(cmd);
+            } else if (regex_match(cmd, SQLParser::re_delete)) {
+                return process_delete(cmd);
+            } else if (regex_match(cmd, SQLParser::re_insert)) {
+                return process_insert(cmd);
+            } else {
+                return "Syntax Wrong!";
+            }
+        } catch (std::exception const &x) {
+            std::cerr << boost::diagnostic_information(x) << std::endl;
+            std::flush(std::cerr);
+            return "DBMS process Error:" + boost::diagnostic_information(x);
+        }
     }
-}
 
-vector<cppDBMS::DataBase> &cppDBMS::DBMS::getDatabases() {
-    load_data();
-    return databases;
-}
-
-cppDBMS::DataBase *cppDBMS::DBMS::getDatabase(const string &db_name) {
-    for (DataBase &db: getDatabases()) {
-        if (db.db_name == db_name)
-            return &db;
+    void DBMS::load_data() {
+        this->databases.clear();
+        this->name_to_database.clear();
+        for (const auto &entry: directory_iterator(get_data_path())) {
+            if (is_directory(entry))
+                this->databases.emplace_back(entry.path(), entry.path().filename().string());
+        }
+        for (auto &db: databases) {
+            name_to_database[db.db_name] = &db;
+        }
     }
-    return nullptr;
-}
 
-string cppDBMS::DBMS::create_database(const string &db_name) {
-    if (is_db_exists(db_name))
-        return FAIL_MSG + "Database " + db_name + " already exists!";
-    DataBase(get_data_path() / db_name, db_name).create();
-    return SUCC_MSG + "Database " + db_name + " created.";
-}
+    bool DBMS::is_db_exists(const string &db_name) {
+        return name_to_database.count(db_name) != 0;
+    }
 
-string cppDBMS::DBMS::drop_database(const string &db_name) {
-    DataBase *db = getDatabase(db_name);
-    if (db == nullptr)
-        return FAIL_MSG + "Database " + db_name + " not exists!";
-    db->drop();
-    //reload data to check existence
-    if (is_db_exists(db_name))
-        return FAIL_MSG + "Database " + db_name + " failed to drop!";
-    return SUCC_MSG + "Database " + db_name + " dropped.";
-}
+    void DBMS::create() {
+    }
 
-string cppDBMS::DBMS::use_database(const string &db_name) {
-    current_database = getDatabase(db_name);
-    if (current_database == nullptr)
-        return FAIL_MSG + "Database " + db_name + " not exists!";
-    else
+    void DBMS::drop() {
+    }
+
+    void DBMS::save_data() {
+    }
+
+    void DBMS::release_data() {
+    }
+
+    vector<DataBase> &DBMS::getDatabases() {
+        load_data();
+        return databases;
+    }
+
+    DataBase *DBMS::getDatabase(const string &db_name) {
+        if (is_db_exists(db_name))
+            return name_to_database[db_name];
+        return nullptr;
+    }
+
+    string DBMS::create_database(const string &db_name) {
+        try {
+            if (is_db_exists(db_name))
+                BOOST_THROW_EXCEPTION(SqlException("Database " + db_name + " already exists!"));
+            DataBase(get_data_path() / db_name, db_name).create();
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
+        return SUCC_MSG + "Database " + db_name + " created.";
+    }
+
+    string DBMS::drop_database(const string &db_name) {
+        try {
+            DataBase *db = getDatabase(db_name);
+            if (db == nullptr)
+                BOOST_THROW_EXCEPTION(SqlException("Database " + db_name + " not exists!"));
+            db->drop();
+            //reload data to check existence
+            if (is_db_exists(db_name))
+                BOOST_THROW_EXCEPTION(SystemException("Database " + db_name + " drop failed!"));
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
+        return SUCC_MSG + "Database " + db_name + " dropped.";
+    }
+
+    string DBMS::use_database(const string &db_name) {
+        try {
+            if (current_database != nullptr)
+
+                current_database = getDatabase(db_name);
+            if (current_database == nullptr)
+                BOOST_THROW_EXCEPTION(SqlException("Database " + db_name + " not exists!"));
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
         return SUCC_MSG + "using Database " + db_name;
-}
-
-string cppDBMS::DBMS::create_table(const string &tb_name,
-                                   const vector<string> &column_names, const vector<type_num> &column_types,
-                                   int primary_index) {
-    if (current_database == nullptr)
-        return FAIL_MSG + " use Database first!";
-    current_database->create_table(tb_name,column_names,column_types,primary_index);
-
-    current_database->load_data();
-    if (current_database->is_tb_exists(tb_name))
-        return FAIL_MSG + "Table " + tb_name + " already exists in Database " + current_database->db_name + "!";
-    Table(current_database->get_data_path())
-
-    if (column_names.size() != column_types.size())
-        BOOST_THROW_EXCEPTION(std::runtime_error("column_names and column_types have different size!"));
-    std::fstream data;
-    //table info write
-    data.open(db_path / current_database / tb_name / (tb_name + ".tb"));
-//        data.write(reinterpret_cast<const char *>(&size), sizeof(size));
-    data << column_types.size();
-    for (auto &type: column_types) {
-//            data.write(reinterpret_cast<const char *>(&type), sizeof(type));
-        data << type;
     }
-    //table column name write
-    for (auto &name: column_names) {
-        data << name.length() << name;
+
+    string DBMS::create_table(const string &tb_name,
+                              const vector<string> &column_names, const vector<type_num_type> &column_types,
+                              int primary_index) {
+        try {
+            if (current_database == nullptr)
+                BOOST_THROW_EXCEPTION(SqlException("use Database first!"));
+            current_database->create_table(tb_name, column_names, column_types, primary_index);
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
     }
-    //table .dat create
-    data.open(db_path / current_database / tb_name / (tb_name + ".dat"));
-    //table .idx create
-    if (primary_index != -1) {
-        data.open(db_path / current_database / tb_name / (tb_name + ".idx"));
-        data << primary_index;
+
+    string DBMS::drop_table(const string &tb_name) {
+        try {
+            if (current_database == nullptr)
+                BOOST_THROW_EXCEPTION(SqlException("use Database first!"));
+            if (current_database->is_tb_exists(tb_name))
+                BOOST_THROW_EXCEPTION(SqlException(
+                                              "Table " + tb_name + " not exists in Database " +
+                                              current_database->db_name + "!"));
+            current_database->getTable(tb_name)->drop();
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
+        return SUCC_MSG + "Database " + tb_name + " dropped.";
     }
-    return SUCC_MSG + "Table " + tb_name + " created!";
+
+    string DBMS::select_value(const string &tb_name, const vector<string> &columns) {
+        try {
+            if (current_database == nullptr)
+                BOOST_THROW_EXCEPTION(SqlException("use Database first!"));
+            if (current_database->is_tb_exists(tb_name))
+                BOOST_THROW_EXCEPTION(SqlException("Table " + tb_name + " not exists in Database " +
+                                                   current_database->db_name + "!"));
+
+            auto tb = current_database->getTable(tb_name);
+            tb->load_data();
+            return tb->data_tostring(Table::ALL_LINE, columns);
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
+    }
+
+    template<typename value_type>
+    string DBMS::select_value(const string &tb_name, const vector<string> &columns, const string &cond_col_name,
+                              boost::function<bool(value_type)> cond) {
+        try {
+            if (current_database == nullptr)
+                BOOST_THROW_EXCEPTION(SqlException("use Database first!"));
+            if (current_database->is_tb_exists(tb_name))
+                BOOST_THROW_EXCEPTION(SqlException("Table " + tb_name + " not exists in Database " +
+                                                   current_database->db_name + "!"));
+
+            auto tb = current_database->getTable(tb_name);
+            tb->load_data();
+            return tb->data_tostring(Table::ALL_LINE, columns);
+        } catch (cppDBMSException &e) {
+            std::cout << boost::diagnostic_information(e) << std::endl;
+            return FAIL_MSG + e.getName() + ": " + e.what();
+        }
+    }
 }

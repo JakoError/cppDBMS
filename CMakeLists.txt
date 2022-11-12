@@ -11,3 +11,5 @@ link_directories(${BOOST_LINK_DIR})
 
 add_executable(cppDBMS_client client.cpp)
 add_executable(cppDBMS_server server.cpp server.hpp server_test.cpp Data.h DataBase.cpp DataBase.hpp Table.cpp Table.hpp DBMS.hpp DBMS.cpp SQLParser.cpp SQLParser.hpp)
+add_executable(table_test table_test.cpp Table.hpp Table.cpp DBMSExceptions.hpp)
+add_executable(test test.cpp)
