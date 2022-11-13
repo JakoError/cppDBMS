@@ -61,6 +61,23 @@ namespace cppDBMS {
         }
     };
 
+    class ParserException : public cppDBMSException {
+    public:
+        using Base = cppDBMSException;
+
+        explicit ParserException(const char *const message) : Base(message) {}
+
+        explicit ParserException(const std::string &message) : Base(message.c_str()) {}
+
+        [[nodiscard]] const char *what() const noexcept override {
+            return Base::what();
+        }
+
+        std::string getName() override{
+            return "ParserException";
+        }
+    };
+
     class IOException : public cppDBMSException {
     public:
         using Base = cppDBMSException;

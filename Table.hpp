@@ -20,35 +20,52 @@ using size_type = cppDBMS::Data::size_type;
 namespace cppDBMS {
     class Table : public Data {
     private:
-        void select_preprocess(vector <size_type> &select_line, vector <size_type> &select_col,
+        void select_preprocess(vector<size_type> &select_line, vector<size_type> &select_col,
                                bool allow_duplicate = true) const;
+
+        bool check_data_same_length() noexcept;
+
+        static string types_to_string(const vector<type_num_type>& types) {
+            std::stringstream ss;
+            ss << '[';
+            for (auto &type: types) {
+                if (type == int_type_num)
+                    ss << "int";
+                else if (type == str_type_num)
+                    ss << "string(" + std::to_string(STR_LEN) + ")";
+                else
+                    ss << "unknown";
+            }
+            ss << ']';
+            return ss.str();
+        }
 
     protected:
         bool is_loaded = false;
 
     public:
-        const static vector <size_type> ALL_LINE;
-        const static vector <size_type> ALL_COL;
+        const static vector<size_type> ALL_LINE;
+        const static vector<size_type> ALL_COL;
 
         string tb_name;
         size_type col_length = 0;
         size_type line_length = 0;
-        vector <string> column_names;
-        vector <type_num_type> column_types;
+        vector<string> column_names;
+        vector<type_num_type> column_types;
         size_type line_size = 0;
-        vector <size_type> column_offset;
+        vector<size_type> column_offset;
 
-        map <string, size_type> name_to_idx;
+        map<string, size_type> name_to_idx;
 
-        vector <vector<int>> int_cols;
-        vector <vector<string>> str_cols;
+        vector<vector<int>> int_cols;
+        vector<vector<string>> str_cols;
 
         size_type primary = -1;
 
         Table(const path &dataPath, string tbName) : Data(dataPath), tb_name(std::move(tbName)) {}
 
         Table(const path &dataPath, string tbName,
-              const vector <string> &columnNames, const vector <type_num_type> &columnTypes,
+              const vector<string> &columnNames, const vector<type_num_type> &columnTypes,
               size_type primary);
 
         path get_tb_info_path() {
@@ -69,7 +86,13 @@ namespace cppDBMS {
 
         void release_data() override;
 
-        void save_data(vector <size_type> select_line, vector <size_type> select_col);
+        void save_data(vector<size_type> select_line, vector<size_type> select_col);
+
+        size_type delete_data();
+
+        size_type delete_data(vector<size_type> select_line);
+
+        size_type insert_data(const vector<string> &value_strs, const vector<type_num_type> &value_types);
 
         void create() override;
 
@@ -77,11 +100,12 @@ namespace cppDBMS {
 
         size_type get_column_idx(const string &col_name);
 
-        vector <size_type> cond_on_data(const string &cond_col_name, const boost::function<bool(const char*)>& cond);
+        vector<size_type> cond_on_data(const string &cond_col_name, const boost::function<bool(const char *)> &cond);
 
-        vector <size_type> cond_on_data(const size_type &cond_col, const boost::function<bool(const char*)>& cond);
+        vector<size_type> cond_on_data(const size_type &cond_col, const boost::function<bool(const char *)> &cond);
 
-        static vector <size_type> cond_on_data(vector<string> &cond_col, const boost::function<bool(const char*)>& cond) {
+        static vector<size_type>
+        cond_on_data(vector<string> &cond_col, const boost::function<bool(const char *)> &cond) {
             vector<size_type> selected_lines;
             for (size_type i = 0; i < cond_col.size(); ++i) {
                 if (cond(cond_col[i].c_str()))
@@ -90,7 +114,7 @@ namespace cppDBMS {
             return selected_lines;
         }
 
-        static vector <size_type> cond_on_data(vector<int> &cond_col, const boost::function<bool(const char*)>& cond) {
+        static vector<size_type> cond_on_data(vector<int> &cond_col, const boost::function<bool(const char *)> &cond) {
             vector<size_type> selected_lines;
             for (size_type i = 0; i < cond_col.size(); ++i) {
                 if (cond(reinterpret_cast<const char *>(&cond_col[i])))
@@ -100,11 +124,11 @@ namespace cppDBMS {
         }
 
 
-        string data_tostring(vector <size_type> select_line = {-1}, vector <size_type> select_col = {-1},
+        string data_tostring(vector<size_type> select_line = {-1}, vector<size_type> select_col = {-1},
                              const string &seg = "|");
 
-        string data_tostring(const vector <size_type> &select_line,
-                             const vector <string> &select_col_name = {"*"},
+        string data_tostring(const vector<size_type> &select_line,
+                             const vector<string> &select_col_name = {"*"},
                              const string &seg = "|");
     };
 }

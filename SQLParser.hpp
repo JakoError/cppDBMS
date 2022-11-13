@@ -25,6 +25,7 @@ namespace cppDBMS {
         static string seg;
         static string seg_v;
         static string name_regex;
+        static string names_regex;
         static string column_regex;
         static string value_regex;
         static string cond_regex;
@@ -41,6 +42,8 @@ namespace cppDBMS {
         static regex re_exit;
 
         static vector<string> split_by_space(const string &str);
+
+        static vector<string> extract_columns(string &str);
     };
 }
 

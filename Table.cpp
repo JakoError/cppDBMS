@@ -8,6 +8,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/throw_exception.hpp>
 #include <boost/range/algorithm.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <iomanip>
 #include <utility>
@@ -179,33 +180,33 @@ string cppDBMS::Table::data_tostring(vector<size_type> select_line,
     for (size_type j = 0; j < select_col.size(); ++j) {
         if (column_types[select_col[j]] == int_type_num) {
             for (size_type i = 0; i < select_line.size(); ++i) {
-                str_container[i][j] = std::to_string(int_cols[j][i]);
+                str_container[i][j] = std::to_string(int_cols[select_col[j]][select_line[i]]);
             }
         } else {
             for (size_type i = 0; i < select_line.size(); ++i) {
-                str_container[i][j] = str_cols[j][i];
+                str_container[i][j] = str_cols[select_col[j]][select_line[i]];
             }
         }
     }
-    for (size_type j = 0; j < select_col.size(); ++j) {
-        for (size_type i = 0; i < select_line.size(); ++i) {
+    for (size_type i = 0; i < select_line.size(); ++i) {
+        for (size_type j = 0; j < select_col.size(); ++j) {
             //recorde string len
-            if (str_container[i][j].length() > max_length[i])
-                max_length[i] = str_container[i][j].length();
+            if (str_container[i][j].length() > max_length[j])
+                max_length[j] = str_container[i][j].length();
         }
     }
 
     //string with align
     std::stringstream ss;
-    for (size_type i = 0; i < select_line.size(); ++i) {
-        ss << std::setw(static_cast<std::streamsize>(max_length[i])) << std::setfill(' ') << column_names[i];
+    for (size_type j = 0; j < select_col.size(); ++j) {
+        ss << std::setw(static_cast<std::streamsize>(max_length[j] + 2)) << std::setfill(' ') << column_names[select_col[j]];
         ss << seg;
     }
     ss << std::endl;
     for (size_type i = 0; i < select_line.size(); ++i) {
         for (size_type j = 0; j < select_col.size(); ++j) {
-            ss << std::setw(static_cast<std::streamsize>(max_length[j])) << std::setfill(' ') << str_container[i][j];
-            ss << std::setw(0) << seg;
+            ss << std::setw(static_cast<std::streamsize>(max_length[j]+2)) << std::setfill(' ') << str_container[i][j];
+            ss << seg;
         }
         ss << std::endl;
     }
@@ -240,22 +241,36 @@ void cppDBMS::Table::select_preprocess(vector<size_type> &select_line, vector<si
                     std::out_of_range("select line " + std::to_string(line) + " out of rage on Table " + tb_name));
     }
     for (auto &col: select_col) {
-        if (col < 0 || col > line_length)
+        if (col < 0 || col > col_length)
             BOOST_THROW_EXCEPTION(
                     std::out_of_range("select column " + std::to_string(col) + " out of rage on Table " + tb_name));
     }
 
     if (!allow_duplicate) {
-        for (auto iter = select_line.begin() + 1; iter < select_line.end(); ++iter) {
-            if (*iter == *(iter - 1))
-                BOOST_THROW_EXCEPTION(SqlException("not allow duplicate line"));
-        }
-        for (auto iter = select_col.begin() + 1; iter < select_col.end(); ++iter) {
-            if (*iter == *(iter - 1))
-                BOOST_THROW_EXCEPTION(SqlException("not allow duplicate column"));
-        }
+        if (select_line.size() > 1)
+            for (auto iter = select_line.begin() + 1; iter != select_line.end(); ++iter) {
+                if (*iter == *(iter - 1))
+                    BOOST_THROW_EXCEPTION(SqlException("not allow duplicate line"));
+            }
+        if (select_col.size() > 1)
+            for (auto iter = select_col.begin() + 1; iter != select_col.end(); ++iter) {
+                if (*iter == *(iter - 1))
+                    BOOST_THROW_EXCEPTION(SqlException("not allow duplicate column"));
+            }
     }
 
+}
+
+bool cppDBMS::Table::check_data_same_length() noexcept {
+    for (size_type i = 0; i < col_length; ++i) {
+        if ((column_types[i] == int_type_num && int_cols[i].size() != line_length) ||
+            (column_types[i] == str_type_num && str_cols[i].size() != line_length)) {
+            //means the loaded data have problem
+            is_loaded = false;
+            return false;
+        }
+    }
+    return true;
 }
 
 void cppDBMS::Table::create() {
@@ -310,13 +325,89 @@ void cppDBMS::Table::release_data() {
     this->is_loaded = false;
 }
 
-vector<size_type> cppDBMS::Table::cond_on_data(const string &cond_col_name, const boost::function<bool(const char *)> &cond) {
+vector<size_type> cppDBMS::Table::cond_on_data(const string &cond_col_name,
+                                               const boost::function<bool(const char *)> &cond) {
     return cond_on_data(get_column_idx(cond_col_name), cond);
 }
 
-vector<size_type> cppDBMS::Table::cond_on_data(const size_type &cond_col, const boost::function<bool(const char *)> &cond) {
+vector<size_type> cppDBMS::Table::cond_on_data(const size_type &cond_col,
+                                               const boost::function<bool(const char *)> &cond) {
     if (column_types[cond_col] == int_type_num)
         return Table::cond_on_data(int_cols[cond_col], cond);
     else
         return Table::cond_on_data(str_cols[cond_col], cond);
+}
+
+size_type cppDBMS::Table::delete_data() {
+    auto line_len_record = line_length;
+
+    //erase all
+    this->line_length = 0;
+    for (auto &col: int_cols) {
+        col.clear();
+    }
+    for (auto &col: str_cols) {
+        col.clear();
+    }
+    if (!check_data_same_length())
+        BOOST_THROW_EXCEPTION(SystemException("wrong data length after delete data on Table " + tb_name + " !"));
+
+    save_data();
+
+    return line_len_record - line_length;
+}
+
+size_type cppDBMS::Table::delete_data(vector<size_type> select_line) {
+    //descending sort
+    boost::sort(select_line, std::greater<size_type>{});
+
+    auto line_len_record = line_length;
+    for (auto &line: select_line) {
+        for (size_type i = 0; i < col_length; ++i) {
+            if (column_types[i] == int_type_num) {
+                int_cols[i].erase(int_cols[i].begin() + line);
+            } else {
+                str_cols[i].erase(str_cols[i].begin() + line);
+            }
+        }
+        this->line_length--;
+    }
+
+    if (!check_data_same_length())
+        BOOST_THROW_EXCEPTION(SystemException("wrong data length after delete data on Table " + tb_name + " !"));
+
+    save_data();
+
+    return line_len_record - line_length;
+}
+
+size_type cppDBMS::Table::insert_data(const vector<string> &value_strs, const vector<type_num_type> &value_types) {
+    if (value_strs.size() != col_length || value_types.size() != col_length)
+        BOOST_THROW_EXCEPTION(
+                SqlException("insert value to Table " + tb_name + " needs " + std::to_string(col_length) +
+                             " data whose types are " + types_to_string(column_types) +
+                             " but sql only got " + std::to_string(value_strs.size())));
+    if (value_types != column_types)
+        BOOST_THROW_EXCEPTION(
+                SqlException(
+                "insert value to Table " + tb_name + " needs these type:" + types_to_string(column_types)));
+
+    for (size_type i = 0; i < col_length; ++i) {
+        if (column_types[i] == int_type_num) {
+            int_cols[i].push_back(boost::lexical_cast<int>(value_strs[i]));
+        } else {
+            if (value_strs[i].length() > STR_LEN)
+                BOOST_THROW_EXCEPTION(SqlException("max string length is " + std::to_string(STR_LEN) +
+                                                   " the string: " + value_strs[i] + "is not allowed"));
+            str_cols[i].push_back(value_strs[i]);
+        }
+    }
+    this->line_length++;
+
+    if (!check_data_same_length())
+        BOOST_THROW_EXCEPTION(SystemException("wrong data length after delete data on Table " + tb_name + " !"));
+
+    save_data();
+
+    return 1;
 }
