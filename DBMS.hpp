@@ -72,10 +72,11 @@ namespace cppDBMS {
 
         string drop_table(const string &tb_name);
 
-        string select_value(const string &tb_name, const vector<string> &columns);
+        string select_values(const string &tb_name, const vector<string> &columns);
 
+        template<typename T>
         string select_value(const string &tb_name, const vector<string> &columns, const string &cond_col_name,
-                            const boost::function<bool(const char *)> &cond);
+                            const boost::function<bool(const char *)> &cond,const string &cond_op, T value);
 
         string delete_value(const string &tb_name);
 

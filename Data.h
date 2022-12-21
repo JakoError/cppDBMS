@@ -114,6 +114,11 @@ namespace cppDBMS {
         f.write(reinterpret_cast<char *>(&value), sizeof(T));
     }
 
+    template<typename T>
+    static size_t hash(T value) {
+        std::hash<T> T_hash;
+        return T_hash(value);
+    }
 
 }
 

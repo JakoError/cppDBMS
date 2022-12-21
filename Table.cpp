@@ -10,6 +10,10 @@
 #include <boost/range/algorithm.hpp>
 #include <boost/lexical_cast.hpp>
 
+#include <boost/serialization/map.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
+
 #include <iomanip>
 #include <utility>
 
@@ -57,6 +61,9 @@ void cppDBMS::Table::load_data() {
         this->column_names[i] = read(info, length);
     }
 
+    //read primary key
+    this->primary = read<size_type>(info);
+
     //create name to idx mapper
     this->name_to_idx.clear();
     for (size_type i = 0; i < this->col_length; ++i) {
@@ -98,6 +105,14 @@ void cppDBMS::Table::load_data() {
         }
     }
 
+    //load index if primary != -1
+    if (this->primary != -1) {
+        fstream index_file;
+        index_file.open(get_tb_idx_path(), std::ios::in);
+        boost::archive::text_iarchive iarch(index_file);
+        iarch >> this->index;
+    }
+
     //flag
     this->is_loaded = true;
 }
@@ -131,6 +146,9 @@ void cppDBMS::Table::save_data(vector<size_type> select_line,
         write(info, this->column_names[i]);
     }
 
+    //-write primary key
+    write(info, this->primary);
+
     //save data
     //-preprocess selector (require no duplication in save data)
     select_preprocess(select_line, select_col, false);
@@ -144,6 +162,15 @@ void cppDBMS::Table::save_data(vector<size_type> select_line,
                 write_value(data, str_cols[j][i]);
             }
         }
+    }
+
+    //save index map if primary != -1
+    if (this->primary != -1) {
+        fstream index_file;
+        index_file.open(get_tb_idx_path(), std::ios::out);
+        build_index();
+        boost::archive::text_oarchive oarch(index_file);
+        oarch << this->index;
     }
 }
 
@@ -199,13 +226,15 @@ string cppDBMS::Table::data_tostring(vector<size_type> select_line,
     //string with align
     std::stringstream ss;
     for (size_type j = 0; j < select_col.size(); ++j) {
-        ss << std::setw(static_cast<std::streamsize>(max_length[j] + 2)) << std::setfill(' ') << column_names[select_col[j]];
+        ss << std::setw(static_cast<std::streamsize>(max_length[j] + 2)) << std::setfill(' ')
+           << column_names[select_col[j]];
         ss << seg;
     }
     ss << std::endl;
     for (size_type i = 0; i < select_line.size(); ++i) {
         for (size_type j = 0; j < select_col.size(); ++j) {
-            ss << std::setw(static_cast<std::streamsize>(max_length[j]+2)) << std::setfill(' ') << str_container[i][j];
+            ss << std::setw(static_cast<std::streamsize>(max_length[j] + 2)) << std::setfill(' ')
+               << str_container[i][j];
             ss << seg;
         }
         ss << std::endl;
@@ -322,6 +351,7 @@ cppDBMS::Table::Table(const path &dataPath, string tbName,
 void cppDBMS::Table::release_data() {
     this->int_cols.clear();
     this->str_cols.clear();
+    this->index.clear();
     this->is_loaded = false;
 }
 
@@ -391,6 +421,20 @@ size_type cppDBMS::Table::insert_data(const vector<string> &value_strs, const ve
         BOOST_THROW_EXCEPTION(
                 SqlException(
                 "insert value to Table " + tb_name + " needs these type:" + types_to_string(column_types)));
+    //check primary duplicate
+    if (this->primary != -1) {
+        if (column_types[primary] == int_type_num) {
+            if (check_duplicate(boost::lexical_cast<int>(value_strs[primary]))) {
+                BOOST_THROW_EXCEPTION(SqlException(
+                                              "duplicate value for primary key [" + column_names[primary] + "] " +
+                                              value_strs[primary]));
+            }
+        } else if (check_duplicate(value_strs[primary])) {
+            BOOST_THROW_EXCEPTION(SqlException(
+                                          "duplicate value for primary key [" + column_names[primary] + "] " +
+                                          value_strs[primary]));
+        }
+    }
 
     for (size_type i = 0; i < col_length; ++i) {
         if (column_types[i] == int_type_num) {
@@ -410,4 +454,25 @@ size_type cppDBMS::Table::insert_data(const vector<string> &value_strs, const ve
     save_data();
 
     return 1;
+}
+
+void cppDBMS::Table::build_index() {
+    if (this->primary == -1)
+        return;
+    if (this->column_types[primary] == int_type_num) {
+        for (size_type i = 0; i < line_length; ++i) {
+            index[hash(int_cols[primary][i])] = i;
+        }
+    } else {
+        for (size_type i = 0; i < line_length; ++i) {
+            index[hash(str_cols[primary][i])] = i;
+        }
+    }
+}
+
+template<typename T>
+bool cppDBMS::Table::check_duplicate(const T &value) {
+    if (this->primary == -1)
+        return false;
+    return index.count(hash(value)) != 0;
 }

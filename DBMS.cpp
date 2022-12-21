@@ -168,7 +168,7 @@ namespace cppDBMS {
         return SUCC_MSG + "Database " + tb_name + " dropped.";
     }
 
-    string DBMS::select_value(const string &tb_name, const vector<string> &columns) {
+    string DBMS::select_values(const string &tb_name, const vector<string> &columns) {
         try {
             if (current_database == nullptr)
                 BOOST_THROW_EXCEPTION(SqlException("use Database first!"));
@@ -185,8 +185,9 @@ namespace cppDBMS {
         }
     }
 
+    template<class T>
     string DBMS::select_value(const string &tb_name, const vector<string> &columns, const string &cond_col_name,
-                              const boost::function<bool(const char *)> &cond) {
+                              const boost::function<bool(const char *)> &cond, const string &cond_op, T value) {
         try {
             if (current_database == nullptr)
                 BOOST_THROW_EXCEPTION(SqlException("use Database first!"));
@@ -196,7 +197,10 @@ namespace cppDBMS {
             //direct call
             auto tb = current_database->getTable(tb_name);
             tb->load_data();
-            return tb->data_tostring(tb->cond_on_data(cond_col_name, cond), columns);
+            if (cond_op == "=" && tb->get_column_idx(cond_col_name) == tb->primary)
+                return tb->data_tostring({tb->index[hash(value)]}, columns);
+            else
+                return tb->data_tostring(tb->cond_on_data(cond_col_name, cond), columns);
         } catch (cppDBMSException &e) {
             std::cout << boost::diagnostic_information(e) << std::endl;
             return FAIL_MSG + e.getName() + ": " + e.what();
@@ -354,16 +358,17 @@ namespace cppDBMS {
 
         if (head_strs.size() == 3) {
             //0select 1from 2<table>
-            return select_value(head_strs[2], columns_strs);
+            return select_values(head_strs[2], columns_strs);
         } else if (head_strs.size() == 6) {
             boost::function<bool(const char *)> cond;
             if (head_strs[5] == "<")
                 cond = [value_str](const char *val) { return string(val) < value_str; };
             else if (head_strs[5] == ">")
                 cond = [value_str](const char *val) { return string(val) > value_str; };
-            else
+            else {
                 cond = [value_str](const char *val) { return string(val) == value_str; };
-            return select_value(head_strs[2], columns_strs, head_strs[4], cond);
+            }
+            return select_value(head_strs[2], columns_strs, head_strs[4], cond, head_strs[5], value_str);
         } else if (head_strs.size() == 7) {
             int value_int = boost::lexical_cast<int>(head_strs[6]);
             boost::function<bool(const char *)> cond;
@@ -373,7 +378,7 @@ namespace cppDBMS {
                 cond = [value_int](const char *val) { return *reinterpret_cast<const int *>(val) > value_int; };
             else
                 cond = [value_int](const char *val) { return *reinterpret_cast<const int *>(val) == value_int; };
-            return select_value(head_strs[2], columns_strs, head_strs[4], cond);
+            return select_value(head_strs[2], columns_strs, head_strs[4], cond, head_strs[5], value_int);
         } else {
             BOOST_THROW_EXCEPTION(ParserException("syntax match select value error"));
         }

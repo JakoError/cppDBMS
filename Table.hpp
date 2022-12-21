@@ -4,6 +4,7 @@
 #ifndef DBMS_TABLE_HPP
 #define DBMS_TABLE_HPP
 
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -62,6 +63,8 @@ namespace cppDBMS {
 
         size_type primary = -1;
 
+        map<std::size_t,size_type> index;
+
         Table(const path &dataPath, string tbName) : Data(dataPath), tb_name(std::move(tbName)) {}
 
         Table(const path &dataPath, string tbName,
@@ -79,6 +82,7 @@ namespace cppDBMS {
         path get_tb_idx_path() {
             return get_data_path() / (tb_name + ".idx");
         }
+        void build_index();
 
         void load_data() override;
 
@@ -123,6 +127,8 @@ namespace cppDBMS {
             return selected_lines;
         }
 
+        template<typename T>
+        bool check_duplicate(const T &value);
 
         string data_tostring(vector<size_type> select_line = {-1}, vector<size_type> select_col = {-1},
                              const string &seg = "|");
