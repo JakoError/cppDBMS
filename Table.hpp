@@ -42,27 +42,42 @@ namespace cppDBMS {
         }
 
     protected:
+        //动态加载数据标识
         bool is_loaded = false;
 
     public:
+        //为内部选取所有行特殊标识
         const static vector<size_type> ALL_LINE;
+        //为内部选取所有列特殊标识
         const static vector<size_type> ALL_COL;
 
+        //表名称
         string tb_name;
+        //所有列数
         size_type col_length = 0;
+        //所有行数
         size_type line_length = 0;
+        //表中所有列名列表
         vector<string> column_names;
+        //表中所有列类型记录
         vector<type_num_type> column_types;
+        //每列按照数据总大小记录
         size_type line_size = 0;
+        //每列按照数据大小记录
         vector<size_type> column_offset;
 
+        //列名指向列位置编号
         map<string, size_type> name_to_idx;
 
+        //包含所有int类型的内存数据表，非该类型列index为空
         vector<vector<int>> int_cols;
+        //含所有string类型的内存数据表，非该类型列index为空
         vector<vector<string>> str_cols;
 
+        //主键所在的列位置编号，无主键为-1
         size_type primary = -1;
 
+        //索引表
         map<std::size_t,size_type> index;
 
         Table(const path &dataPath, string tbName) : Data(dataPath), tb_name(std::move(tbName)) {}

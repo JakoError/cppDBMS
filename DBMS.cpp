@@ -69,6 +69,14 @@ namespace cppDBMS {
     }
 
     void DBMS::create() {
+        if (!exists(get_data_path()))
+            try {
+                create_directories(get_data_path());
+            } catch (std::exception const &x) {
+                std::cerr << boost::diagnostic_information(x) << std::endl;
+                std::cerr << "cannot create dbms root directory" << std::endl;
+                std::flush(std::cerr);
+            }
     }
 
     void DBMS::drop() {

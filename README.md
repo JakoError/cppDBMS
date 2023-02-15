@@ -1,8 +1,12 @@
-客户端服务端分开+
+注意：本项目依赖于Boost库，请修改CMakeLists.txt中：
+```
+set(BOOST_INC_DIR  D:/Codes/C++/boost_1_80_0)
+set(BOOST_LINK_DIR  D:/Codes/C++/boost_1_80_0/stage/lib)
+```
+`D:/Codes/C++/boost_1_80_0` 修改为本地所在的Boost库位置
 
-多线程处理++
 
-数据加密++
+本项目包含：
 
 客户端:
 1. 处理查询命令输入（包含错误）
@@ -20,5 +24,3 @@
    2. 索引文件
 2. 接受客户端收到的结构化命令（多线程）
 3. 处理发送给结构化数据io
-
-    

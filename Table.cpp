@@ -323,7 +323,6 @@ void cppDBMS::Table::drop() {
         ss << "delete Table " << tb_name << " info file failed ";
     if (boost::filesystem::exists(get_tb_data_path()))
         ss << "delete Table " << tb_name << " data file failed ";
-
 }
 
 cppDBMS::Table::Table(const path &dataPath, string tbName,

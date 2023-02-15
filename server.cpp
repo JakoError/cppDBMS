@@ -15,6 +15,7 @@ namespace cppDBMS {
 
     void DBMSServer::client_session(const DBMSServer::socket_ptr &sock) {
         DBMS dbms(dbms_path);
+        dbms.create();
         char data[MAX_CMD_SIZE] = {};
         try {
             while (true) {
