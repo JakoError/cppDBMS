@@ -57,6 +57,8 @@ set(BOOST_LINK_DIR  D:/Codes/C++/boost_1_80_0/stage/lib)
 
 Modify this to the Boost library location in your env.
 
+![DBMS-architecture-diagram](https://github.com/JakoError/cppDBMS/blob/main/images/DBMS-architecture-diagram.png)
+![DBMS-layer-call-design](https://github.com/JakoError/cppDBMS/blob/main/images/DBMS-layer-call-design.png)
 
 本项目为Bzj@UESTC命题约束提供
 
