@@ -1,5 +1,8 @@
-C/C++实现简易的DBMS 
-simple DBMS(Database Management System) Based on C/C++
+# C/C++实现简易的DBMS
+
+# Simple DBMS Based on C/C++
+
+DBMS(Database Management System)
 
 ## 项目包含：
 
@@ -37,18 +40,27 @@ simple DBMS(Database Management System) Based on C/C++
        3. Hierarchical call function to implement corresponding file operations and obtain command results
        4. Process and send command results to io
 
+## Installation and Running
+
+1. install VS2022 or other compilers that support C++
+2. compile files by using CMake
+
+
 注意：本项目依赖于Boost库，请修改CMakeLists.txt中：
+
 Reset the BOOST profile in CMakeLists.txt for functional usage.
 ```
 set(BOOST_INC_DIR  D:/Codes/C++/boost_1_80_0)
 set(BOOST_LINK_DIR  D:/Codes/C++/boost_1_80_0/stage/lib)
 ```
 `D:/Codes/C++/boost_1_80_0` 修改为本地所在的Boost库位置
+
 Modify this to the Boost library location in your env.
 
 
-本项目为bzj@UESTC命题约束提供
-Bzj@UESTC provided this project
+本项目为Bzj@UESTC命题约束提供
+
+Bzj@UESTC provided the idea for this project
 ## Credits
 
 - Boost - https://github.com/boostorg/boost
